@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class CopyFiles : TestWithTempDir

@@ -6,7 +6,7 @@ using System.Text;
 using NUnit.Framework;
 using NUnit.Framework.Constraints;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class ToString

@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class Delete : TestWithTempDir

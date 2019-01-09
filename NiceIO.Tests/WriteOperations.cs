@@ -1,7 +1,8 @@
 ﻿using System;
+using System.IO;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class WriteOperations : TestWithTempDir
@@ -21,25 +22,29 @@ namespace NiceIO.Tests
 		[Test]
 		public void OnRelativeFile_WriteText()
 		{
-			Assert.Throws<ArgumentException>(() => new NPath("relative").WriteAllText("hi"));
+			Assert.AreEqual("hi", new NPath("relative").WriteAllText("hi").ReadAllText());
 		}
 
 		[Test]
 		public void OnRelativeFile_WriteLines()
 		{
-			Assert.Throws<ArgumentException>(() => new NPath("relative").WriteAllLines(new[]{"hi"}));
+			CollectionAssert.AreEqual(new [] { "hi" }, new NPath("relative").WriteAllLines(new[]{"hi"}).ReadAllLines());
 		}
 
 		[Test]
 		public void OnRelativeFile_ReadText()
 		{
-			Assert.Throws<ArgumentException>(() => new NPath("relative").ReadAllText());
+			Assert.Throws<FileNotFoundException>(() => new NPath("relative").ReadAllText());
+			PopulateTempDir(new[] { "relative" });
+			new NPath("relative").ReadAllText();
 		}
 
 		[Test]
 		public void OnRelativeFile_ReadLines()
 		{
-			Assert.Throws<ArgumentException>(() => new NPath("relative").ReadAllLines());
+			Assert.Throws<FileNotFoundException>(() => new NPath("relative").ReadAllLines());
+			PopulateTempDir(new[] { "relative" });
+			new NPath("relative").ReadAllLines();
 		}
 	}
 }

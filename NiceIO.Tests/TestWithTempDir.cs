@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	public class TestWithTempDir
 	{
@@ -15,6 +15,7 @@ namespace NiceIO.Tests
 			NPath.FileSystem = new FileSystem();
 			_tempPath = NPath.CreateTempDirectory("NiceIOTest");
 			NPath.FileSystem.SetCurrentDirectory(_tempPath);
+			NPath.FileSystem.SetProcessDirectory(_tempPath);
 		}
 
 		[TearDown]

@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	public class TempDir : IDisposable
 	{

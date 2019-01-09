@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class Contents : TestWithTempDir

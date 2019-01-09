@@ -2,7 +2,7 @@
 using System.IO;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class MoveFile : TestWithTempDir
@@ -52,7 +52,8 @@ namespace NiceIO.Tests
 		[Test]
 		public void WithRelativeSource()
 		{
-			Assert.Throws<ArgumentException>(() => new NPath("somedir/somefile").Move(new NPath("irrelevant")));
+			PopulateTempDir(new[] { "somedir/", "somedir/somefile" });
+			new NPath("somedir/somefile").Move(new NPath("irrelevant"));
 		}
 		
 		[Test]

@@ -2,6 +2,7 @@
 // =====================
 //
 // Copyright © `2015-2017` `Lucas Meijer`
+// Copyright © `2017-2018` `Andreia Gaita`
 //
 // Permission is hereby granted, free of charge, to any person
 // obtaining a copy of this software and associated documentation
@@ -26,24 +27,26 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace NiceIO
+namespace SpoiledCat.NiceIO
 {
 	[Serializable]
-#if !NICEIO_INTERNAL
+	[DebuggerDisplay("{DebuggerDisplay,nq}")]
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	struct NPath : IEquatable<NPath>, IComparable
+		struct NPath : IEquatable<NPath>, IComparable
 	{
 		public static NPath Default;
 
 		private readonly string[] _elements;
-		private readonly bool _isRelative;
 		private readonly string _driveLetter;
-		private readonly bool _isInitialized;
 
 		#region construction
 
@@ -52,31 +55,31 @@ namespace NiceIO
 			if (path == null)
 				throw new ArgumentNullException("path");
 
-			_isInitialized = true;
+			IsInitialized = true;
 
 			path = ParseDriveLetter(path, out _driveLetter);
 
 			if (path == "/")
 			{
-				_isRelative = false;
+				IsRelative = false;
 				_elements = new string[] {};
 			}
 			else
 			{
 				var split = path.Split('/', '\\');
 
-				_isRelative = _driveLetter == null && IsRelativeFromSplitString(split);
+				IsRelative = _driveLetter == null && IsRelativeFromSplitString(split);
 
-				_elements = ParseSplitStringIntoElements(split.Where(s => s.Length > 0).ToArray(), _isRelative);
+				_elements = ParseSplitStringIntoElements(split.Where(s => s.Length > 0).ToArray(), IsRelative);
 			}
 		}
 
 		private NPath(string[] elements, bool isRelative, string driveLetter)
 		{
 			_elements = elements;
-			_isRelative = isRelative;
+			IsRelative = isRelative;
 			_driveLetter = driveLetter;
-			_isInitialized = true;
+			IsInitialized = true;
 		}
 
 		private static string[] ParseSplitStringIntoElements(IEnumerable<string> inputs, bool isRelative)
@@ -112,7 +115,7 @@ namespace NiceIO
 
 		private static string ParseDriveLetter(string path, out string driveLetter)
 		{
-			if (path.Length >= 2 && path[1] == ':')
+			if (path.Length >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\'))
 			{
 				driveLetter = path[0].ToString();
 				return path.Substring(2);
@@ -142,13 +145,13 @@ namespace NiceIO
 			if (!append.All(p => p.IsRelative))
 				throw new ArgumentException("You cannot .Combine a non-relative path");
 
-			return new NPath(ParseSplitStringIntoElements(_elements.Concat(append.SelectMany(p => p._elements)), _isRelative), _isRelative, _driveLetter);
+			return new NPath(
+				ParseSplitStringIntoElements(_elements.Concat(append.SelectMany(p => p._elements)), IsRelative),
+				IsRelative, _driveLetter);
 		}
 
-		public NPath Parent
-		{
-			get
-			{
+		public NPath Parent {
+			get {
 				ThrowIfNotInitialized();
 
 				if (_elements.Length == 0)
@@ -156,7 +159,7 @@ namespace NiceIO
 
 				var newElements = _elements.Take(_elements.Length - 1).ToArray();
 
-				return new NPath(newElements, _isRelative, _driveLetter);
+				return new NPath(newElements, IsRelative, _driveLetter);
 			}
 		}
 
@@ -167,7 +170,9 @@ namespace NiceIO
 			if (!IsChildOf(path))
 			{
 				if (!IsRelative && !path.IsRelative && _driveLetter != path._driveLetter)
-					throw new ArgumentException("Path.RelativeTo() was invoked with two paths that are on different volumes. invoked on: " + ToString() + " asked to be made relative to: " + path);
+					throw new ArgumentException(
+						"Path.RelativeTo() was invoked with two paths that are on different volumes. invoked on: " +
+						ToString() + " asked to be made relative to: " + path);
 
 				NPath commonParent = Default;
 				foreach (var parent in RecursiveParents)
@@ -179,13 +184,18 @@ namespace NiceIO
 				}
 
 				if (!commonParent.IsInitialized)
-					throw new ArgumentException("Path.RelativeTo() was unable to find a common parent between " + ToString() + " and " + path);
+					throw new ArgumentException("Path.RelativeTo() was unable to find a common parent between " +
+					                            ToString() + " and " + path);
 
 				if (IsRelative && path.IsRelative && commonParent.IsEmpty)
-					throw new ArgumentException("Path.RelativeTo() was invoked with two relative paths that do not share a common parent.  Invoked on: " + ToString() + " asked to be made relative to: " + path);
+					throw new ArgumentException(
+						"Path.RelativeTo() was invoked with two relative paths that do not share a common parent.  Invoked on: " +
+						ToString() + " asked to be made relative to: " + path);
 
 				var depthDiff = path.Depth - commonParent.Depth;
-				return new NPath(Enumerable.Repeat("..", depthDiff).Concat(_elements.Skip(commonParent.Depth)).ToArray(), true, null);
+				return new NPath(
+					Enumerable.Repeat("..", depthDiff).Concat(_elements.Skip(commonParent.Depth)).ToArray(), true,
+					null);
 			}
 
 			return new NPath(_elements.Skip(path._elements.Length).ToArray(), true, null);
@@ -221,24 +231,21 @@ namespace NiceIO
 			ThrowIfRoot();
 
 			var newElements = (string[])_elements.Clone();
-			newElements[newElements.Length - 1] = FileSystem.ChangeExtension(_elements[_elements.Length - 1], WithDot(extension));
+			newElements[newElements.Length - 1] =
+				FileSystem.ChangeExtension(_elements[_elements.Length - 1], WithDot(extension));
 			if (extension == string.Empty)
 				newElements[newElements.Length - 1] = newElements[newElements.Length - 1].TrimEnd('.');
-			return new NPath(newElements, _isRelative, _driveLetter);
+			return new NPath(newElements, IsRelative, _driveLetter);
 		}
+
 		#endregion construction
 
 		#region inspection
 
-		public bool IsRelative
-		{
-			get { return _isRelative; }
-		}
+		public bool IsRelative { get; }
 
-		public string FileName
-		{
-			get
-			{
+		public string FileName {
+			get {
 				ThrowIfNotInitialized();
 				ThrowIfRoot();
 
@@ -246,38 +253,29 @@ namespace NiceIO
 			}
 		}
 
-		public string FileNameWithoutExtension
-		{
-			get
-			{
+		public string FileNameWithoutExtension {
+			get {
 				ThrowIfNotInitialized();
 
 				return FileSystem.GetFileNameWithoutExtension(FileName);
 			}
 		}
 
-		public IEnumerable<string> Elements
-		{
-			get
-			{
+		public IEnumerable<string> Elements {
+			get {
 				ThrowIfNotInitialized();
 				return _elements;
 			}
 		}
 
-		public int Depth
-		{
-			get
-			{
+		public int Depth {
+			get {
 				ThrowIfNotInitialized();
 				return _elements.Length;
 			}
 		}
 
-		public bool IsInitialized
-		{
-			get { return _isInitialized; }
-		}
+		public bool IsInitialized { get; }
 
 		public bool Exists()
 		{
@@ -306,7 +304,7 @@ namespace NiceIO
 		public bool DirectoryExists()
 		{
 			ThrowIfNotInitialized();
-			return FileSystem.DirectoryExists(ToString());
+			return FileSystem.DirectoryExists(ToProcessDirectory());
 		}
 
 		public bool DirectoryExists(string append)
@@ -322,13 +320,13 @@ namespace NiceIO
 			ThrowIfNotInitialized();
 			if (!append.IsInitialized)
 				return DirectoryExists();
-			return FileSystem.DirectoryExists(Combine(append).ToString());
+			return FileSystem.DirectoryExists(Combine(append).ToProcessDirectory());
 		}
 
 		public bool FileExists()
 		{
 			ThrowIfNotInitialized();
-			return FileSystem.FileExists(ToString());
+			return FileSystem.FileExists(ToProcessDirectory());
 		}
 
 		public bool FileExists(string append)
@@ -344,13 +342,11 @@ namespace NiceIO
 			ThrowIfNotInitialized();
 			if (!append.IsInitialized)
 				return FileExists();
-			return FileSystem.FileExists(Combine(append).ToString());
+			return FileSystem.FileExists(Combine(append).ToProcessDirectory());
 		}
 
-		public string ExtensionWithDot
-		{
-			get
-			{
+		public string ExtensionWithDot {
+			get {
 				ThrowIfNotInitialized();
 				if (IsRoot)
 					throw new ArgumentException("A root directory does not have an extension");
@@ -379,14 +375,14 @@ namespace NiceIO
 
 		public string ToString(SlashMode slashMode)
 		{
-			if (!_isInitialized)
-				return null;
+			if (!IsInitialized)
+				return String.Empty;
 
 			// Check if it's linux root /
 			if (IsRoot && string.IsNullOrEmpty(_driveLetter))
 				return Slash(slashMode).ToString();
 
-			if (_isRelative && _elements.Length == 0)
+			if (IsRelative && _elements.Length == 0)
 				return ".";
 
 			var sb = new StringBuilder();
@@ -395,7 +391,7 @@ namespace NiceIO
 				sb.Append(_driveLetter);
 				sb.Append(":");
 			}
-			if (!_isRelative)
+			if (!IsRelative)
 				sb.Append(Slash(slashMode));
 			var first = true;
 			foreach (var element in _elements)
@@ -438,14 +434,14 @@ namespace NiceIO
 
 		public bool Equals(NPath p)
 		{
-			if (p._isInitialized != _isInitialized)
+			if (p.IsInitialized != IsInitialized)
 				return false;
 
 			// return early if we're comparing two NPath.Default instances
-			if (!_isInitialized)
+			if (!IsInitialized)
 				return true;
 
-			if (p._isRelative != _isRelative)
+			if (p.IsRelative != IsRelative)
 				return false;
 
 			if (!string.Equals(p._driveLetter, _driveLetter, PathStringComparison))
@@ -472,12 +468,14 @@ namespace NiceIO
 			{
 				int hash = 17;
 				// Suitable nullity checks etc, of course :)
-				hash = hash * 23 + _isInitialized.GetHashCode();
-				hash = hash * 23 + _isRelative.GetHashCode();
+				hash = hash * 23 + IsInitialized.GetHashCode();
+				if (!IsInitialized)
+					return hash;
+				hash = hash * 23 + IsRelative.GetHashCode();
 				foreach (var element in _elements)
-					hash = hash * 23 + (IsLinux ? element : element.ToUpperInvariant()).GetHashCode();
+					hash = hash * 23 + (IsUnix ? element : element.ToUpperInvariant()).GetHashCode();
 				if (_driveLetter != null)
-					hash = hash * 23 + (IsLinux ? _driveLetter : _driveLetter.ToUpperInvariant()).GetHashCode();
+					hash = hash * 23 + (IsUnix ? _driveLetter : _driveLetter.ToUpperInvariant()).GetHashCode();
 				return hash;
 			}
 		}
@@ -507,21 +505,17 @@ namespace NiceIO
 			return extension.StartsWith(".") ? extension : "." + extension;
 		}
 
-		public bool IsEmpty
-		{
-			get
-			{
+		public bool IsEmpty {
+			get {
 				ThrowIfNotInitialized();
 				return _elements.Length == 0;
 			}
 		}
 
-		public bool IsRoot
-		{
-			get
-			{
+		public bool IsRoot {
+			get {
 				ThrowIfNotInitialized();
-				return _elements.Length == 0 && !_isRelative;
+				return _elements.Length == 0 && !IsRelative;
 			}
 		}
 
@@ -531,7 +525,9 @@ namespace NiceIO
 
 		public IEnumerable<NPath> Files(string filter, bool recurse = false)
 		{
-			return FileSystem.GetFiles(ToString(), filter, recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new NPath(s));
+			return FileSystem
+				.GetFiles(ToProcessDirectory(), filter,
+					recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new NPath(s));
 		}
 
 		public IEnumerable<NPath> Files(bool recurse = false)
@@ -551,7 +547,8 @@ namespace NiceIO
 
 		public IEnumerable<NPath> Directories(string filter, bool recurse = false)
 		{
-			return FileSystem.GetDirectories(ToString(), filter, recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new NPath(s));
+			return FileSystem.GetDirectories(ToProcessDirectory(), filter,
+				recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new NPath(s));
 		}
 
 		public IEnumerable<NPath> Directories(bool recurse = false)
@@ -562,13 +559,14 @@ namespace NiceIO
 		#endregion
 
 		#region filesystem writing operations
+
 		public NPath CreateFile()
 		{
 			ThrowIfNotInitialized();
 			ThrowIfRelative();
 			ThrowIfRoot();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteAllBytes(ToString(), new byte[0]);
+			FileSystem.WriteAllBytes(ToProcessDirectory(), new byte[0]);
 			return this;
 		}
 
@@ -581,7 +579,8 @@ namespace NiceIO
 		{
 			ThrowIfNotInitialized();
 			if (!file.IsRelative)
-				throw new ArgumentException("You cannot call CreateFile() on an existing path with a non relative argument");
+				throw new ArgumentException(
+					"You cannot call CreateFile() on an existing path with a non relative argument");
 			return Combine(file).CreateFile();
 		}
 
@@ -591,9 +590,11 @@ namespace NiceIO
 			ThrowIfRelative();
 
 			if (IsRoot)
-				throw new NotSupportedException("CreateDirectory is not supported on a root level directory because it would be dangerous:" + ToString());
+				throw new NotSupportedException(
+					"CreateDirectory is not supported on a root level directory because it would be dangerous:" +
+					ToString());
 
-			FileSystem.DirectoryCreate(ToString());
+			FileSystem.DirectoryCreate(ToProcessDirectory());
 			return this;
 		}
 
@@ -629,7 +630,6 @@ namespace NiceIO
 		public NPath Copy(NPath dest, Func<NPath, bool> fileFilter)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			ThrowIfNotInitialized(dest);
 
 			if (dest.IsRelative)
@@ -663,7 +663,7 @@ namespace NiceIO
 
 				absoluteDestination.EnsureParentDirectoryExists();
 
-				FileSystem.FileCopy(ToString(), absoluteDestination.ToString(), true);
+				FileSystem.FileCopy(ToProcessDirectory(), absoluteDestination.ToProcessDirectory(), true);
 				return absoluteDestination;
 			}
 
@@ -671,7 +671,8 @@ namespace NiceIO
 			{
 				absoluteDestination.EnsureDirectoryExists();
 				foreach (var thing in Contents())
-					thing.CopyWithDeterminedDestination(absoluteDestination.Combine(thing.RelativeTo(this)), fileFilter);
+					thing.CopyWithDeterminedDestination(absoluteDestination.Combine(thing.RelativeTo(this)),
+						fileFilter);
 				return absoluteDestination;
 			}
 
@@ -684,22 +685,30 @@ namespace NiceIO
 			ThrowIfRelative();
 
 			if (IsRoot)
-				throw new NotSupportedException("Delete is not supported on a root level directory because it would be dangerous:" + ToString());
+				throw new NotSupportedException(
+					"Delete is not supported on a root level directory because it would be dangerous:" + ToString());
 
-			if (FileExists())
-				FileSystem.FileDelete(ToString());
-			else if (DirectoryExists())
-				try
-				{
-					FileSystem.DirectoryDelete(ToString(), true);
-				}
-				catch (IOException)
-				{
-					if (deleteMode == DeleteMode.Normal)
-						throw;
-				}
-			else
+			var isFile = FileExists();
+			var isDir = DirectoryExists();
+			if (!isFile && !isDir)
 				throw new InvalidOperationException("Trying to delete a path that does not exist: " + ToString());
+
+			try
+			{
+				if (isFile)
+				{
+					FileSystem.FileDelete(ToProcessDirectory());
+				}
+				else
+				{
+					FileSystem.DirectoryDelete(ToProcessDirectory(), true);
+				}
+			}
+			catch (IOException)
+			{
+				if (deleteMode == DeleteMode.Normal)
+					throw;
+			}
 		}
 
 		public void DeleteIfExists(DeleteMode deleteMode = DeleteMode.Normal)
@@ -717,7 +726,9 @@ namespace NiceIO
 			ThrowIfRelative();
 
 			if (IsRoot)
-				throw new NotSupportedException("DeleteContents is not supported on a root level directory because it would be dangerous:" + ToString());
+				throw new NotSupportedException(
+					"DeleteContents is not supported on a root level directory because it would be dangerous:" +
+					ToString());
 
 			if (FileExists())
 				throw new InvalidOperationException("It is not valid to perform this operation on a file");
@@ -773,10 +784,13 @@ namespace NiceIO
 		{
 			ThrowIfNotInitialized();
 			ThrowIfNotInitialized(dest);
-			ThrowIfRelative();
 
 			if (IsRoot)
-				throw new NotSupportedException("Move is not supported on a root level directory because it would be dangerous:" + ToString());
+				throw new NotSupportedException(
+					"Move is not supported on a root level directory because it would be dangerous:" + ToString());
+
+			if (IsRelative)
+				return MakeAbsolute().Move(dest);
 
 			if (dest.IsRelative)
 				return Move(Parent.Combine(dest));
@@ -786,91 +800,84 @@ namespace NiceIO
 
 			if (FileExists())
 			{
+				dest.DeleteIfExists();
 				dest.EnsureParentDirectoryExists();
-				FileSystem.FileMove(ToString(), dest.ToString());
+				FileSystem.FileMove(ToProcessDirectory(), dest.ToProcessDirectory());
 				return dest;
 			}
 
 			if (DirectoryExists())
 			{
-				FileSystem.DirectoryMove(ToString(), dest.ToString());
+				FileSystem.DirectoryMove(ToProcessDirectory(), dest.ToProcessDirectory());
 				return dest;
 			}
 
-			throw new ArgumentException("Move() called on a path that doesn't exist: " + ToString());
+			throw new ArgumentException(
+				"Move() called on a path that doesn't exist: " + ToProcessDirectory().ToString());
 		}
 
 		public NPath WriteAllText(string contents)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteAllText(ToString(), contents);
+			FileSystem.WriteAllText(ToProcessDirectory(), contents);
 			return this;
 		}
 
 		public string ReadAllText()
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
-			return FileSystem.ReadAllText(ToString());
+			return FileSystem.ReadAllText(ToProcessDirectory());
 		}
 
 		public NPath WriteAllText(string contents, Encoding encoding)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteAllText(ToString(), contents, encoding);
+			FileSystem.WriteAllText(ToProcessDirectory(), contents, encoding);
 			return this;
 		}
 
 		public string ReadAllText(Encoding encoding)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
-			return FileSystem.ReadAllText(ToString(), encoding);
+			return FileSystem.ReadAllText(ToProcessDirectory(), encoding);
 		}
 
 		public NPath WriteLines(string[] contents)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteLines(ToString(), contents);
+			FileSystem.WriteLines(ToProcessDirectory(), contents);
 			return this;
 		}
 
 		public NPath WriteAllLines(string[] contents)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteAllLines(ToString(), contents);
+			FileSystem.WriteAllLines(ToProcessDirectory(), contents);
 			return this;
 		}
 
 		public string[] ReadAllLines()
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
-			return FileSystem.ReadAllLines(ToString());
+			return FileSystem.ReadAllLines(ToProcessDirectory());
 		}
 
 		public NPath WriteAllBytes(byte[] contents)
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
 			EnsureParentDirectoryExists();
-			FileSystem.WriteAllBytes(ToString(), contents);
+			FileSystem.WriteAllBytes(ToProcessDirectory(), contents);
 			return this;
 		}
 
 		public byte[] ReadAllBytes()
 		{
 			ThrowIfNotInitialized();
-			ThrowIfRelative();
-			return FileSystem.ReadAllBytes(ToString());
+			return FileSystem.ReadAllBytes(ToProcessDirectory());
 		}
 
 
@@ -881,7 +888,8 @@ namespace NiceIO
 
 			destination.EnsureDirectoryExists();
 			var _this = this;
-			return Files(recurse).Where(fileFilter ?? AlwaysTrue).Select(file => file.Copy(destination.Combine(file.RelativeTo(_this)))).ToArray();
+			return Files(recurse).Where(fileFilter ?? AlwaysTrue)
+				.Select(file => file.Copy(destination.Combine(file.RelativeTo(_this)))).ToArray();
 		}
 
 		public IEnumerable<NPath> MoveFiles(NPath destination, bool recurse, Func<NPath, bool> fileFilter = null)
@@ -890,28 +898,29 @@ namespace NiceIO
 			ThrowIfNotInitialized(destination);
 
 			if (IsRoot)
-				throw new NotSupportedException("MoveFiles is not supported on this directory because it would be dangerous:" + ToString());
+				throw new NotSupportedException(
+					"MoveFiles is not supported on this directory because it would be dangerous:" + ToString());
 
 			destination.EnsureDirectoryExists();
 			var _this = this;
-			return Files(recurse).Where(fileFilter ?? AlwaysTrue).Select(file => file.Move(destination.Combine(file.RelativeTo(_this)))).ToArray();
+			return Files(recurse).Where(fileFilter ?? AlwaysTrue)
+				.Select(file => file.Move(destination.Combine(file.RelativeTo(_this)))).ToArray();
 		}
+
 		#endregion
 
 		#region special paths
 
-		public static NPath CurrentDirectory
-		{
-			get
-			{
-				return new NPath(FileSystem.GetCurrentDirectory());
-			}
+		public static NPath CurrentDirectory {
+			get { return new NPath(FileSystem.GetCurrentDirectory()); }
 		}
 
-		public static NPath HomeDirectory
-		{
-			get
-			{
+		public static NPath ProcessDirectory {
+			get { return new NPath(FileSystem.GetProcessDirectory()); }
+		}
+
+		public static NPath HomeDirectory {
+			get {
 				if (FileSystem.DirectorySeparatorChar == '\\')
 					return new NPath(Environment.GetEnvironmentVariable("USERPROFILE"));
 				return new NPath(Environment.GetEnvironmentVariable("HOME"));
@@ -919,10 +928,8 @@ namespace NiceIO
 		}
 
 		private static NPath systemTemp;
-		public static NPath SystemTemp
-		{
-			get
-			{
+		public static NPath SystemTemp {
+			get {
 				if (!systemTemp.IsInitialized)
 					systemTemp = new NPath(FileSystem.GetTempPath());
 				return systemTemp;
@@ -933,19 +940,21 @@ namespace NiceIO
 
 		private void ThrowIfRelative()
 		{
-			if (_isRelative)
-				throw new ArgumentException("You are attempting an operation on a Path that requires an absolute path, but the path is relative");
+			if (IsRelative)
+				throw new ArgumentException(
+					"You are attempting an operation on a Path that requires an absolute path, but the path is relative");
 		}
 
 		private void ThrowIfRoot()
 		{
 			if (IsRoot)
-				throw new ArgumentException("You are attempting an operation that is not valid on a root level directory");
+				throw new ArgumentException(
+					"You are attempting an operation that is not valid on a root level directory");
 		}
 
 		private void ThrowIfNotInitialized()
 		{
-			if (!_isInitialized)
+			if (!IsInitialized)
 				throw new InvalidOperationException("You are attemping an operation on an null path");
 		}
 
@@ -953,6 +962,14 @@ namespace NiceIO
 		{
 			path.ThrowIfNotInitialized();
 		}
+
+		public NPath ToProcessDirectory()
+		{
+			if (!IsRelative)
+				return this;
+			return NPath.ProcessDirectory.Combine(this);
+		}
+
 
 		public NPath EnsureDirectoryExists(string append = "")
 		{
@@ -1041,10 +1058,8 @@ namespace NiceIO
 			return Parent.IsChildOf(potentialBasePath);
 		}
 
-		public IEnumerable<NPath> RecursiveParents
-		{
-			get
-			{
+		public IEnumerable<NPath> RecursiveParents {
+			get {
 				ThrowIfNotInitialized();
 				var candidate = this;
 				while (true)
@@ -1078,53 +1093,49 @@ namespace NiceIO
 		}
 
 		private static IFileSystem _fileSystem;
-		public static IFileSystem FileSystem
-		{
-			get
-			{
+		public static IFileSystem FileSystem {
+			get {
 				if (_fileSystem == null)
 #if UNITY_4 || UNITY_5 || UNITY_5_3_OR_NEWER
-					_fileSystem = new FileSystem(UnityEngine.Application.dataPath);
+                    FileSystem = new FileSystem(UnityEngine.Application.dataPath);
 #else
-					_fileSystem = new FileSystem(Directory.GetCurrentDirectory());
+					FileSystem = new FileSystem(Directory.GetCurrentDirectory());
 #endif
 				return _fileSystem;
 			}
-			set
-			{
-				_fileSystem = value;
-			}
+			set { _fileSystem = value; }
 		}
 
-		private static bool? _isLinux;
-		internal static bool IsLinux
-		{
-			get
-			{
-				if (!_isLinux.HasValue)
-					_isLinux = FileSystem.DirectoryExists("/proc");
-				return _isLinux.Value;
+		private static bool? _isUnix;
+		internal static bool IsUnix {
+			get {
+				if (!_isUnix.HasValue)
+					_isUnix = Environment.OSVersion.Platform == PlatformID.MacOSX ||
+					          Environment.OSVersion.Platform == PlatformID.Unix;
+				return _isUnix.Value;
 			}
 		}
 
 		private static StringComparison? _pathStringComparison;
-		private static StringComparison PathStringComparison
-		{
-			get
-			{
-				// this is lazily evaluated because IsLinux uses the FileSystem object and that can be set
+		private static StringComparison PathStringComparison {
+			get {
+				// this is lazily evaluated because IsUnix uses the FileSystem object and that can be set
 				// after static constructors happen here
 				if (!_pathStringComparison.HasValue)
-					_pathStringComparison = IsLinux ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+					_pathStringComparison = IsUnix ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 				return _pathStringComparison.Value;
 			}
 		}
+
+		internal string DebuggerDisplay => ToString();
 	}
 
-#if !NICEIO_INTERNAL
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	static class Extensions
+		static class Extensions
 	{
 		public static IEnumerable<NPath> Copy(this IEnumerable<NPath> self, string dest)
 		{
@@ -1175,38 +1186,56 @@ namespace NiceIO
 		{
 			// Add a reference to Mono.Posix with an .rsp file in the Assets folder with the line "-r:Mono.Posix.dll" for this to work
 #if ENABLE_MONO
-			if (!path.IsInitialized || !NPath.IsLinux /* nothing to resolve on windows */ || path.IsRelative || !path.FileExists())
-				return path;
-			return new NPath(Mono.Unix.UnixPath.GetCompleteRealPath(path.ToString()));
+            if (!path.IsInitialized || !NPath.IsUnix /* nothing to resolve on windows */ || path.IsRelative || !path.FileExists())
+                return path;
+            return new NPath(Mono.Unix.UnixPath.GetCompleteRealPath(path.ToString()));
 #else
 			return path;
 #endif
 		}
+
+		public static NPath CreateTempDirectory(this NPath baseDir, string myprefix = "")
+		{
+			var random = new Random();
+			while (true)
+			{
+				var candidate = baseDir.Combine(myprefix + "_" + random.Next());
+				if (!candidate.Exists())
+					return candidate.CreateDirectory();
+			}
+		}
+
 	}
 
-#if !NICEIO_INTERNAL
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	enum SlashMode
+		enum SlashMode
 	{
 		Native,
 		Forward,
 		Backward
 	}
 
-#if !NICEIO_INTERNAL
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	enum DeleteMode
+		enum DeleteMode
 	{
 		Normal,
 		Soft
 	}
 
-#if !NICEIO_INTERNAL
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	interface IFileSystem
+		interface IFileSystem
 	{
 		string ChangeExtension(string path, string extension);
 		string Combine(string path1, string path2);
@@ -1224,16 +1253,15 @@ namespace NiceIO
 		IEnumerable<string> GetDirectories(string path);
 		IEnumerable<string> GetDirectories(string path, string pattern);
 		IEnumerable<string> GetDirectories(string path, string pattern, SearchOption searchOption);
-		string GetDirectoryName(string path);
 		string GetFileNameWithoutExtension(string fileName);
 		IEnumerable<string> GetFiles(string path);
 		IEnumerable<string> GetFiles(string path, string pattern);
 		IEnumerable<string> GetFiles(string path, string pattern, SearchOption searchOption);
 		string GetFullPath(string path);
-		string GetParentDirectory(string path);
 		string GetRandomFileName();
 		string GetTempPath();
 		Stream OpenRead(string path);
+		Stream OpenWrite(string path, FileMode mode);
 		byte[] ReadAllBytes(string path);
 		string[] ReadAllLines(string path);
 		string ReadAllText(string path);
@@ -1246,14 +1274,20 @@ namespace NiceIO
 		void WriteLines(string path, string[] contents);
 
 		char DirectorySeparatorChar { get; }
+		string GetProcessDirectory();
+		void SetProcessDirectory(string directory);
 	}
 
-#if !NICEIO_INTERNAL
+
+#if NICEIO_INTERNAL
+	internal
+#else
 	public
 #endif
-	class FileSystem : IFileSystem
+		class FileSystem : IFileSystem
 	{
-		private string _currentDirectory;
+		private string currentDirectory;
+		private string processDirectory;
 
 		public FileSystem()
 		{}
@@ -1264,23 +1298,44 @@ namespace NiceIO
 		/// <param name="directory">Current directory</param>
 		public FileSystem(string directory)
 		{
-			_currentDirectory = directory;
+			currentDirectory = directory;
 		}
 
 		public void SetCurrentDirectory(string directory)
 		{
 			if (!Path.IsPathRooted(directory))
 				throw new ArgumentException("SetCurrentDirectory requires a rooted path", "directory");
-			_currentDirectory = directory;
+			currentDirectory = directory;
+		}
+
+		public void SetProcessDirectory(string directory)
+		{
+			if (!Path.IsPathRooted(directory))
+				throw new ArgumentException("SetProcessDirectory requires a rooted path", "directory");
+			processDirectory = directory;
+		}
+
+		public string GetCurrentDirectory()
+		{
+			return currentDirectory ?? Directory.GetCurrentDirectory();
+		}
+
+		public string GetProcessDirectory()
+		{
+			return processDirectory ?? Directory.GetCurrentDirectory();
 		}
 
 		public bool FileExists(string filename)
 		{
+			if (!Path.IsPathRooted(filename))
+				throw new ArgumentException("FileExists requires a rooted path", "filename");
 			return File.Exists(filename);
 		}
 
 		public IEnumerable<string> GetDirectories(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("GetDirectories requires a rooted path", "path");
 			return Directory.GetDirectories(path);
 		}
 
@@ -1304,13 +1359,10 @@ namespace NiceIO
 			return Path.GetFullPath(path);
 		}
 
-		public string GetDirectoryName(string path)
-		{
-			return Path.GetDirectoryName(path);
-		}
-
 		public bool DirectoryExists(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("DirectoryExists requires a rooted path", "path");
 			return Directory.Exists(path);
 		}
 
@@ -1320,18 +1372,17 @@ namespace NiceIO
 			return (attr & FileAttributes.Directory) == FileAttributes.Directory;
 		}
 
-		public string GetParentDirectory(string path)
-		{
-			return Directory.GetParent(path).FullName;
-		}
-
 		public IEnumerable<string> GetDirectories(string path, string pattern)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("GetDirectories requires a rooted path", "path");
 			return Directory.GetDirectories(path, pattern);
 		}
 
 		public IEnumerable<string> GetDirectories(string path, string pattern, SearchOption searchOption)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("GetDirectories requires a rooted path", "path");
 			return Directory.GetDirectories(path, pattern, searchOption);
 		}
 
@@ -1345,100 +1396,168 @@ namespace NiceIO
 			return Path.GetFileNameWithoutExtension(fileName);
 		}
 
+
 		public IEnumerable<string> GetFiles(string path)
 		{
-			return Directory.GetFiles(path);
+			return GetFiles(path, "*");
 		}
 
 		public IEnumerable<string> GetFiles(string path, string pattern)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("GetFiles requires a rooted path", "path");
 			return Directory.GetFiles(path, pattern);
 		}
 
 		public IEnumerable<string> GetFiles(string path, string pattern, SearchOption searchOption)
 		{
-			return Directory.GetFiles(path, pattern, searchOption);
+			foreach (var file in GetFiles(path, pattern))
+				yield return file;
+
+			if (searchOption != SearchOption.AllDirectories)
+				yield break;
+
+#if ENABLE_MONO
+            if (NPath.IsUnix)
+            {
+                try
+                {
+                    path = Mono.Unix.UnixPath.GetCompleteRealPath(path);
+                }
+                catch
+                {}
+            }
+#endif
+			foreach (var dir in GetDirectories(path))
+			{
+				var realdir = dir;
+#if ENABLE_MONO
+                if (NPath.IsUnix)
+                {
+                    try
+                    {
+                        realdir = Mono.Unix.UnixPath.GetCompleteRealPath(dir);
+                    }
+                    catch
+                    {}
+                }
+#endif
+				if (path != realdir)
+				{
+					foreach (var file in GetFiles(dir, pattern, searchOption))
+						yield return file;
+				}
+			}
 		}
 
 		public byte[] ReadAllBytes(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("ReadAllBytes requires a rooted path", "path");
 			return File.ReadAllBytes(path);
 		}
 
 		public void WriteAllBytes(string path, byte[] bytes)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("WriteAllBytes requires a rooted path", "path");
 			File.WriteAllBytes(path, bytes);
 		}
 
-		public void DirectoryCreate(string toString)
+		public void DirectoryCreate(string path)
 		{
-			Directory.CreateDirectory(toString);
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("DirectoryCreate requires a rooted path", "path");
+			Directory.CreateDirectory(path);
 		}
 
 		public void FileCopy(string sourceFileName, string destFileName, bool overwrite)
 		{
+			if (!Path.IsPathRooted(sourceFileName))
+				throw new ArgumentException("FileCopy requires a rooted path", "sourceFileName");
+			if (!Path.IsPathRooted(destFileName))
+				throw new ArgumentException("FileCopy requires a rooted path", "destFileName");
 			File.Copy(sourceFileName, destFileName, overwrite);
 		}
 
 		public void FileDelete(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("FileDelete requires a rooted path", "path");
 			File.Delete(path);
 		}
 
 		public void DirectoryDelete(string path, bool recursive)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("DirectoryDelete requires a rooted path", "path");
 			Directory.Delete(path, recursive);
 		}
 
 		public void FileMove(string sourceFileName, string destFileName)
 		{
+			if (!Path.IsPathRooted(sourceFileName))
+				throw new ArgumentException("FileMove requires a rooted path", "sourceFileName");
+			if (!Path.IsPathRooted(destFileName))
+				throw new ArgumentException("FileMove requires a rooted path", "destFileName");
 			File.Move(sourceFileName, destFileName);
 		}
 
-		public void DirectoryMove(string toString, string s)
+		public void DirectoryMove(string source, string dest)
 		{
-			Directory.Move(toString, s);
-		}
-
-		public string GetCurrentDirectory()
-		{
-			if (_currentDirectory != null)
-				return _currentDirectory;
-			return Directory.GetCurrentDirectory();
+			if (!Path.IsPathRooted(source))
+				throw new ArgumentException("DirectoryMove requires a rooted path", "source");
+			if (!Path.IsPathRooted(dest))
+				throw new ArgumentException("DirectoryMove requires a rooted path", "dest");
+			Directory.Move(source, dest);
 		}
 
 		public void WriteAllText(string path, string contents)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("WriteAllText requires a rooted path", "path");
 			File.WriteAllText(path, contents);
 		}
 
 		public void WriteAllText(string path, string contents, Encoding encoding)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("WriteAllText requires a rooted path", "path");
 			File.WriteAllText(path, contents, encoding);
 		}
 
 		public string ReadAllText(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("ReadAllText requires a rooted path", "path");
 			return File.ReadAllText(path);
 		}
 
 		public string ReadAllText(string path, Encoding encoding)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("ReadAllText requires a rooted path", "path");
 			return File.ReadAllText(path, encoding);
 		}
 
 		public void WriteAllLines(string path, string[] contents)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("WriteAllLines requires a rooted path", "path");
 			File.WriteAllLines(path, contents);
 		}
 
 		public string[] ReadAllLines(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("ReadAllLines requires a rooted path", "path");
 			return File.ReadAllLines(path);
 		}
 
 		public void WriteLines(string path, string[] contents)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("WriteLines requires a rooted path", "path");
 			using (var fs = File.AppendText(path))
 			{
 				foreach (var line in contents)
@@ -1453,11 +1572,19 @@ namespace NiceIO
 
 		public Stream OpenRead(string path)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("OpenRead requires a rooted path", "path");
 			return File.OpenRead(path);
 		}
 
-		public char DirectorySeparatorChar
+		public Stream OpenWrite(string path, FileMode mode)
 		{
+			if (!Path.IsPathRooted(path))
+				throw new ArgumentException("OpenWrite requires a rooted path", "path");
+			return new FileStream(path, mode);
+		}
+
+		public char DirectorySeparatorChar {
 			get { return Path.DirectorySeparatorChar; }
 		}
 	}

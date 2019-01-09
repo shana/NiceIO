@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using NUnit.Framework;
 
-namespace NiceIO.Tests
+namespace SpoiledCat.NiceIO.Tests
 {
 	[TestFixture]
 	public class CopyAndMoveFiles : TestWithTempDir
@@ -24,7 +24,7 @@ namespace NiceIO.Tests
 		public void CopyFilesInFolders()
 		{
 			PopulateTempDir(new[] { "file1", "file2" ,"dir/", "dir/file3"});
-			var result = _tempPath.Files(recurse:true).Copy(_tempPath.Combine("somedir"));
+			var result = _tempPath.Files(recurse:true).ToList().Copy(_tempPath.Combine("somedir"));
 
 			CollectionAssert.AreEqual(new[] { _tempPath.Combine("somedir/file1"), _tempPath.Combine("somedir/file2") , _tempPath.Combine("somedir/file3")}, result);
 
@@ -52,7 +52,7 @@ namespace NiceIO.Tests
 		public void MoveFilesInFolders()
 		{
 			PopulateTempDir(new[] { "file1", "file2", "dir/", "dir/file3" });
-			var result = _tempPath.Files(recurse: true).Move(_tempPath.Combine("somedir"));
+			var result = _tempPath.Files(recurse: true).ToList().Move(_tempPath.Combine("somedir"));
 
 			CollectionAssert.AreEqual(new[] { _tempPath.Combine("somedir/file1"), _tempPath.Combine("somedir/file2"), _tempPath.Combine("somedir/file3") }, result);
 
